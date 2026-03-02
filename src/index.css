@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-light-bg: #F0F4FF;
+  --color-light-accent: #4A90E2;
+  --color-light-highlight: #34C759;
+  
+  --color-dark-bg: #03050f;
+  --color-dark-surface: #0A0F1F;
+  --color-dark-accent: #00D2FF;
+  --color-dark-highlight: #9A5EFF;
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased transition-colors duration-300;
+  }
+}
+
+.kanban-column {
+  @apply flex flex-col gap-4 p-4 rounded-xl bg-black/5 dark:bg-white/5 min-h-[500px] w-full;
+}
+
+.kanban-card {
+  @apply p-4 rounded-lg bg-white dark:bg-dark-surface shadow-sm border border-black/5 dark:border-white/10 cursor-grab active:cursor-grabbing;
+}
