@@ -33,6 +33,7 @@ import {
   Calendar,
   AlertTriangle,
   CheckCircle,
+  Check,
   Clock as ClockIcon,
   DollarSign,
   Timer,
@@ -1484,6 +1485,8 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
   const [isDiscussionOpen, setIsDiscussionOpen] = useState(false);
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [meetingData, setMeetingData] = useState({ title: '', agenda: '', dateTime: '', agentIds: [] as string[] });
+  const [chatInput, setChatInput] = useState('');
+  const [discussionMessages, setDiscussionMessages] = useState<{role: string, text: string}[]>([]);
 
   const selectedTask = state.tasks.find(t => t.id === selectedTaskId);
 
@@ -1496,7 +1499,7 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
   };
 
   const filteredTasks = state.tasks.filter(t => {
-    if (filterAgent !== 'all' && !t.assignedAgentIds.includes(filterAgent)) return false;
+    if (filterAgent !== 'all' && !(t.assignedAgentIds || []).includes(filterAgent)) return false;
     if (filterCategory !== 'all' && t.category !== filterCategory) return false;
     if (filterPriority !== 'all' && t.priority !== filterPriority) return false;
     return true;
@@ -1506,6 +1509,20 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
     setState(prev => ({
       ...prev,
       tasks: prev.tasks.map(t => t.id === taskId ? { ...t, status } : t)
+    }));
+  };
+
+  const handleStageChange = (taskId: string, stage: Task['stage']) => {
+    setState(prev => ({
+      ...prev,
+      tasks: prev.tasks.map(t => t.id === taskId ? { ...t, stage } : t)
+    }));
+  };
+
+  const handleProgressChange = (taskId: string, progress: number) => {
+    setState(prev => ({
+      ...prev,
+      tasks: prev.tasks.map(t => t.id === taskId ? { ...t, progress: Math.min(100, Math.max(0, progress)) } : t)
     }));
   };
 
@@ -1527,6 +1544,32 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
     setMeetingData({ title: '', agenda: '', dateTime: '', agentIds: [] });
     alert('Board meeting scheduled successfully.');
   };
+
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return;
+    const userMsg = { role: 'Admin', text: chatInput };
+    setDiscussionMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+
+    // Simulate Agent Response
+    setTimeout(() => {
+      const agent = state.agents.find(a => a.id === selectedTask?.assignedAgentIds?.[0]);
+      const agentMsg = { 
+        role: agent?.name || 'Agent', 
+        text: `Understood, Admin. I am adjusting the parameters for "${selectedTask?.title}" based on your input. Proceeding with the current stage.` 
+      };
+      setDiscussionMessages(prev => [...prev, agentMsg]);
+    }, 1000);
+  };
+
+  useEffect(() => {
+    if (isDiscussionOpen && discussionMessages.length === 0 && selectedTask) {
+      setDiscussionMessages([
+        { role: 'System', text: `Task "${selectedTask.title}" has been paused for discussion.` },
+        { role: 'Alpha', text: 'Admin, I am standing by for instructions regarding the current mission bottlenecks.' }
+      ]);
+    }
+  }, [isDiscussionOpen, selectedTask]);
 
   return (
     <div className="space-y-10 pb-20">
@@ -1595,7 +1638,7 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
 
       {/* Action Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredTasks.slice(0, 3).map((task) => (
+        {filteredTasks.slice(0, 6).map((task) => (
           <motion.div
             key={task.id}
             layoutId={task.id}
@@ -1636,7 +1679,7 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
 
             <div className="mt-6 flex items-center justify-between">
               <div className="flex -space-x-2">
-                {task.assignedAgentIds.map(id => {
+                {(task.assignedAgentIds || []).map(id => {
                   const agent = state.agents.find(a => a.id === id);
                   return (
                     <div key={id} title={agent?.name} className="w-8 h-8 rounded-full border-2 border-white dark:border-dark-surface bg-light-accent dark:bg-dark-accent flex items-center justify-center text-[10px] font-bold text-white">
@@ -1695,23 +1738,46 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
 
                 <p className="text-lg text-black/60 dark:text-white/60 leading-relaxed">{selectedTask.description}</p>
 
-                {/* Stages */}
-                <div className="grid grid-cols-3 gap-4">
-                  {[
-                    { label: 'Initiating', stage: 'initiating', icon: Play },
-                    { label: 'In Action', stage: 'in-action', icon: Activity },
-                    { label: 'Wrapping', stage: 'wrapping', icon: CheckCircle }
-                  ].map((s, i) => (
-                    <div key={i} className={cn(
-                      "p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all",
-                      selectedTask.stage === s.stage 
-                        ? "bg-light-accent/10 dark:bg-dark-accent/10 border-light-accent dark:border-dark-accent text-light-accent dark:text-dark-accent" 
-                        : "bg-black/5 dark:bg-white/5 border-transparent opacity-40"
-                    )}>
-                      <s.icon size={20} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{s.label}</span>
-                    </div>
-                  ))}
+                {/* Stages - Interactive */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-black/40 dark:text-white/40">Current Mission Stage</span>
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: 'Initiating', stage: 'initiating', icon: Play },
+                      { label: 'In Action', stage: 'in-action', icon: Activity },
+                      { label: 'Wrapping', stage: 'wrapping', icon: CheckCircle }
+                    ].map((s, i) => (
+                      <button 
+                        key={i} 
+                        onClick={() => handleStageChange(selectedTask.id, s.stage as Task['stage'])}
+                        className={cn(
+                          "p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all",
+                          selectedTask.stage === s.stage 
+                            ? "bg-light-accent dark:bg-dark-accent border-light-accent dark:border-dark-accent text-white shadow-lg" 
+                            : "bg-black/5 dark:bg-white/5 border-transparent opacity-40 hover:opacity-60"
+                        )}
+                      >
+                        <s.icon size={20} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Progress Slider */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-black/40 dark:text-white/40">Mission Progress</span>
+                    <span className="font-bold text-emerald-500">{selectedTask.progress}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={selectedTask.progress}
+                    onChange={(e) => handleProgressChange(selectedTask.id, parseInt(e.target.value))}
+                    className="w-full h-2 bg-black/5 dark:bg-white/5 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
                 </div>
 
                 {/* Highlights Accordion */}
@@ -1720,10 +1786,38 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
                     <h6 className="font-bold text-sm uppercase tracking-widest flex items-center gap-2">
                       <StickyNote size={16} /> Live Highlights
                     </h6>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-black/40 dark:text-white/40">Needs Attention</span>
+                      <button 
+                        onClick={() => {
+                          setState(prev => ({
+                            ...prev,
+                            tasks: prev.tasks.map(t => t.id === selectedTask.id ? { ...t, needsAttention: !t.needsAttention } : t)
+                          }));
+                        }}
+                        className={cn(
+                          "w-10 h-5 rounded-full relative transition-all",
+                          selectedTask.needsAttention ? "bg-red-500" : "bg-black/10 dark:bg-white/10"
+                        )}
+                      >
+                        <div className={cn(
+                          "absolute top-1 w-3 h-3 rounded-full bg-white transition-all",
+                          selectedTask.needsAttention ? "right-1" : "left-1"
+                        )} />
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-sm italic text-black/60 dark:text-white/60">
-                    {selectedTask.highlights || "No active highlights for this stage."}
-                  </p>
+                  <textarea 
+                    className="w-full bg-transparent text-sm italic text-black/60 dark:text-white/60 border-none outline-none resize-none min-h-[60px]"
+                    value={selectedTask.highlights || ""}
+                    onChange={(e) => {
+                      setState(prev => ({
+                        ...prev,
+                        tasks: prev.tasks.map(t => t.id === selectedTask.id ? { ...t, highlights: e.target.value } : t)
+                      }));
+                    }}
+                    placeholder="Add mission highlights..."
+                  />
                 </div>
               </div>
 
@@ -1743,17 +1837,37 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
                   <div className="pt-6 border-t border-black/5 dark:border-white/10">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-black/40 dark:text-white/40 block mb-4">Assigned Team</span>
                     <div className="space-y-3">
-                      {selectedTask.assignedAgentIds.map(id => {
-                        const agent = state.agents.find(a => a.id === id);
-                        return (
-                          <div key={id} className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-light-accent dark:bg-dark-accent flex items-center justify-center text-[10px] font-bold text-white">
-                              {agent?.name[0]}
+                      {state.agents.map(agent => (
+                        <button 
+                          key={agent.id}
+                          onClick={() => {
+                            if (!selectedTask) return;
+                            const currentIds = selectedTask.assignedAgentIds || [];
+                            const ids = currentIds.includes(agent.id)
+                              ? currentIds.filter(id => id !== agent.id)
+                              : [...currentIds, agent.id];
+                            setState(prev => ({
+                              ...prev,
+                              tasks: prev.tasks.map(t => t.id === selectedTask.id ? { ...t, assignedAgentIds: ids } : t)
+                            }));
+                          }}
+                          className="flex items-center justify-between w-full group/agent"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white transition-all",
+                              (selectedTask.assignedAgentIds || []).includes(agent.id) ? "bg-light-accent dark:bg-dark-accent" : "bg-black/10 dark:bg-white/10"
+                            )}>
+                              {agent.name[0]}
                             </div>
-                            <span className="font-bold text-sm">{agent?.name}</span>
+                            <span className={cn(
+                              "font-bold text-sm transition-all",
+                              (selectedTask.assignedAgentIds || []).includes(agent.id) ? "text-black dark:text-white" : "text-black/40 dark:text-white/40"
+                            )}>{agent.name}</span>
                           </div>
-                        );
-                      })}
+                          {(selectedTask.assignedAgentIds || []).includes(agent.id) && <Check size={14} className="text-emerald-500" />}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
@@ -1768,7 +1882,7 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
                     <Button 
                       onClick={() => setIsDiscussionOpen(true)}
                       variant="success"
-                      className="w-full flex items-center justify-center gap-2 py-4"
+                      className="w-full flex items-center justify-center gap-2 py-4 shadow-lg shadow-emerald-500/20"
                     >
                       <PhoneCall size={18} /> Call for Discussion
                     </Button>
@@ -1780,27 +1894,57 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
         )}
       </AnimatePresence>
 
-      {/* Job Showcase Carousel */}
-      <div className="space-y-6">
-        <h4 className="text-xl font-bold tracking-tighter flex items-center gap-2">
-          <Activity size={20} className="text-light-accent dark:text-dark-accent" /> Job Showcase
-        </h4>
-        <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-hide">
-          {state.tasks.filter(t => t.status === 'complete' || t.status === 'in-progress').map((task) => (
-            <Card key={task.id} className="min-w-[300px] bg-white/50 dark:bg-white/5 border-none shadow-none hover:bg-white dark:hover:bg-white/10 transition-all">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-black/40 dark:text-white/40">{task.category}</span>
-                <CheckCircle size={14} className={task.status === 'complete' ? "text-emerald-500" : "text-black/20 dark:text-white/20"} />
+      {/* Upcoming Meetings & Job Showcase */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <div className="lg:col-span-2 space-y-6">
+          <h4 className="text-xl font-bold tracking-tighter flex items-center gap-2">
+            <Activity size={20} className="text-light-accent dark:text-dark-accent" /> Job Showcase
+          </h4>
+          <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-hide">
+            {state.tasks.filter(t => t.status === 'complete' || t.status === 'in-progress').map((task) => (
+              <Card key={task.id} className="min-w-[300px] bg-white/50 dark:bg-white/5 border-none shadow-none hover:bg-white dark:hover:bg-white/10 transition-all cursor-pointer" onClick={() => setSelectedTaskId(task.id)}>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-black/40 dark:text-white/40">{task.category}</span>
+                  <CheckCircle size={14} className={task.status === 'complete' ? "text-emerald-500" : "text-black/20 dark:text-white/20"} />
+                </div>
+                <h6 className="font-bold mb-1 truncate">{task.title}</h6>
+                <p className="text-[10px] text-black/40 dark:text-white/40">
+                  {(task.assignedAgentIds || []).length > 0 
+                    ? `Assigned to ${state.agents.find(a => a.id === task.assignedAgentIds[0])?.name}${(task.assignedAgentIds || []).length > 1 ? ` +${(task.assignedAgentIds || []).length - 1}` : ''}`
+                    : 'Unassigned'}
+                </p>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <h4 className="text-xl font-bold tracking-tighter flex items-center gap-2">
+            <Calendar size={20} className="text-light-accent dark:text-dark-accent" /> Upcoming Board Meetings
+          </h4>
+          <div className="space-y-4">
+            {state.meetings.length > 0 ? state.meetings.map((meeting) => (
+              <Card key={meeting.id} className="bg-white/50 dark:bg-white/5 border-none shadow-none p-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Scheduled</span>
+                  <span className="text-[10px] font-bold text-black/40 dark:text-white/40">{new Date(meeting.dateTime).toLocaleString()}</span>
+                </div>
+                <h6 className="font-bold text-sm mb-1">{meeting.title}</h6>
+                <p className="text-[10px] text-black/60 dark:text-white/60 line-clamp-2 mb-4">{meeting.agenda}</p>
+                <div className="flex -space-x-2">
+                  {meeting.agentIds.map(id => (
+                    <div key={id} className="w-6 h-6 rounded-full bg-light-accent dark:bg-dark-accent border-2 border-white dark:border-dark-surface flex items-center justify-center text-[8px] font-bold text-white">
+                      {state.agents.find(a => a.id === id)?.name[0]}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )) : (
+              <div className="py-10 text-center text-black/40 dark:text-white/40 italic border-2 border-dashed border-black/5 dark:border-white/5 rounded-3xl">
+                No meetings scheduled.
               </div>
-              <h6 className="font-bold mb-1 truncate">{task.title}</h6>
-              <p className="text-[10px] text-black/40 dark:text-white/40">Completed by {state.agents.find(a => a.id === task.assignedAgentIds[0])?.name}</p>
-            </Card>
-          ))}
-          {state.tasks.length === 0 && (
-            <div className="w-full py-10 text-center text-black/40 dark:text-white/40 italic">
-              No jobs currently in the showcase.
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -1818,7 +1962,7 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
                 <PhoneCall size={20} />
                 <div>
                   <h6 className="font-bold text-sm">Mission Discussion</h6>
-                  <p className="text-[10px] opacity-80">Agent: {state.agents.find(a => a.id === selectedTask?.assignedAgentIds[0])?.name}</p>
+                  <p className="text-[10px] opacity-80">Agent: {state.agents.find(a => a.id === selectedTask?.assignedAgentIds?.[0])?.name || 'Unknown'}</p>
                 </div>
               </div>
               <button onClick={() => setIsDiscussionOpen(false)} className="p-2 hover:bg-white/10 rounded-lg">
@@ -1826,24 +1970,28 @@ function AgentsInActionView({ state, setState }: { state: AppState, setState: Re
               </button>
             </div>
             <div className="flex-1 p-6 overflow-y-auto space-y-4">
-              <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl text-xs">
-                <strong>System:</strong> Task "{selectedTask?.title}" has been paused for discussion.
-              </div>
-              <div className="bg-light-accent/10 dark:bg-dark-accent/10 p-4 rounded-2xl text-xs text-right ml-8">
-                <strong>Admin:</strong> Alpha, I need a status update on the EMEA data. Why is it on hold?
-              </div>
-              <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl text-xs mr-8">
-                <strong>Alpha:</strong> Admin, the regional servers are experiencing latency. I am waiting for the Q4 verification batch. Should I bypass and use Q3 estimates?
-              </div>
+              {discussionMessages.map((m, i) => (
+                <div key={i} className={cn(
+                  "p-4 rounded-2xl text-xs",
+                  m.role === 'Admin' ? "bg-light-accent/10 dark:bg-dark-accent/10 text-right ml-8" : 
+                  m.role === 'System' ? "bg-black/5 dark:bg-white/5 italic text-center" : "bg-black/5 dark:bg-white/5 mr-8"
+                )}>
+                  <strong className="block mb-1 opacity-60">{m.role}</strong>
+                  {m.text}
+                </div>
+              ))}
             </div>
             <div className="p-6 border-t border-black/5 dark:border-white/10">
               <div className="flex gap-2">
                 <input 
                   type="text" 
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
                   placeholder="Type instruction..." 
                   className="flex-1 bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-2 text-sm outline-none"
                 />
-                <Button className="px-4"><ChevronRight size={18} /></Button>
+                <Button onClick={handleSendMessage} className="px-4"><ChevronRight size={18} /></Button>
               </div>
             </div>
           </motion.div>
